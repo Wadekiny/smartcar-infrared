@@ -1,0 +1,9 @@
+".\Objects\main.obj",
+".\Objects\delay.obj",
+".\Objects\oled.obj",
+".\Objects\pwm.obj",
+".\Objects\uart.obj",
+".\Objects\inits.obj",
+".\Objects\show.obj" 
+TO ".\Objects\∫ÏÕ‚—∞º£" 
+PRINT(".\Listings\∫ÏÕ‚—∞º£.m51") RAMSIZE(256) 

@@ -1,0 +1,89 @@
+C51 COMPILER V9.56.0.0   UART                                                              11/04/2018 15:51:33 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE UART
+OBJECT MODULE PLACED IN .\Objects\uart.obj
+COMPILER INVOKED BY: D:\Keil_v5\C51\BIN\C51.EXE uart.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\uart
+                    -.lst) OBJECT(.\Objects\uart.obj)
+
+line level    source
+
+   1          #include <STC12C5A60S2.h>
+   2          #include "uart.h"
+   3          #include "def.h"
+   4          
+   5          unsigned char index = 0;
+   6          unsigned char gets[3];
+   7          unsigned char get;
+   8          extern float kp;
+   9          extern float ki; 
+  10          extern float kd;
+  11          bit get9;
+  12          
+  13          void UartInit()
+  14          {
+  15   1              //不用PCON的SMOD 不加倍
+  16   1      
+  17   1              /*SCON八位数据 如果用第九位设置成d0--(为了蓝牙推荐设置成50)*/
+  18   1              SCON |= 0x50; //设置模式1 允许接收 禁止多机
+  19   1              AUXR |= 0X11;//使用独立波特率 12分频
+  20   1              //装初值 公式：
+  21   1              //RELOAD = 256-(INT)(SYSclk/Baud0/32/T*2^SOMD+0.5)
+  22   1              BRT=0Xfd;
+  23   1              EA = 1; //总中断
+  24   1              ES = 1; //串口中断 用来接收数据
+  25   1      }
+  26          
+  27          void SendChar(unsigned char dat)
+  28          {
+  29   1              SBUF = dat;             //送SBUF
+  30   1              while(!TI);             //等待送完
+  31   1          TI = 0;
+  32   1      }
+  33          void SendStr(unsigned char *s)
+  34          {
+  35   1              while(*s != '\0')         
+  36   1              {
+  37   2                      SendChar(*s);
+  38   2                      s++;
+  39   2              }
+  40   1      }
+  41          
+  42          void uart_isr() interrupt 4     //接收
+  43          {
+  44   1              if (RI)
+  45   1              {
+  46   2                      RI = 0;
+  47   2                      //gets[index++] = SBUF;
+  48   2                      get = SBUF;
+  49   2                      if (get == 0xff)
+  50   2                      {
+  51   3                              kp -= 0.1;
+  52   3                      }
+  53   2                      /*
+  54   2                      if (index == 3)
+C51 COMPILER V9.56.0.0   UART                                                              11/04/2018 15:51:33 PAGE 2   
+
+  55   2                      {
+  56   2                              index = 0;
+  57   2                              kp = gets[0];
+  58   2                              ki = gets[1];
+  59   2                              kd = gets[2];
+  60   2                      }
+  61   2                      */
+  62   2              }
+  63   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    137    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      5    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

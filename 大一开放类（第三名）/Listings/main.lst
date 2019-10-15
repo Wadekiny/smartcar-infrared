@@ -1,0 +1,328 @@
+C51 COMPILER V9.56.0.0   MAIN                                                              11/04/2018 15:51:32 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: D:\Keil_v5\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\main
+                    -.lst) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          #include <STC12C5A60S2.h>
+   2          #include <math.h>
+   3          #include "delay.h"
+   4          #include "oled.h"
+   5          #include "pwm.h"
+   6          #include "uart.h"
+   7          #include "def.h"
+   8          #include "binary.h"
+   9          #include "inits.h"
+  10          #include "show.h"
+  11          
+  12          #define u8 unsigned char
+  13          #define u16 unsigned int
+  14          
+  15          void DetectError();
+  16          void CaculateDutyCycle();
+  17          void ApplyDutyCycle();
+  18          void ModeAuto();
+  19          void ModeManual();
+  20          void Angle90(u8 dir90);
+  21          void Angle45(u8 dir45);
+  22          
+  23          float max_zkb = 0;
+  24          u8 angle = 0;           //上一个角
+  25          u8 special = 0;         //特殊情况
+  26          u8 Tcount = 0;          //T口记录
+  27          extern u8 get;          //接收数据
+  28          u8 mode = AUTO;         //工作模式
+  29          float left_dutyc;               //左电机占空比
+  30          float right_dutyc;              //右电机占空比
+  31          const float default_dutyc = 59.5;       //默认占空比
+  32          
+  33          //---------------------pid---------------------//
+  34          float kp = 2,ki = 0.02,kd = 0;          //pid系数
+  35          float error = 0,p_error = 0;            //两次偏差值
+  36          float I=0,D=0;                                          //积分项，微分项
+  37          float pid_out = 0;                                      //pid输出
+  38          float pp_error = 0;
+  39          //---------------------pid---------------------//
+  40          
+  41          void main()
+  42          {
+  43   1              InitAll();
+  44   1              while (1)
+  45   1              {       
+  46   2              }
+  47   1      }
+  48          
+  49          void t0timer() interrupt 1
+  50          {
+  51   1              TR0 = 0;
+  52   1          TH0 = 0xdc;//b8
+  53   1          TL0 = 0x00;
+  54   1              Show();
+C51 COMPILER V9.56.0.0   MAIN                                                              11/04/2018 15:51:32 PAGE 2   
+
+  55   1              if (mode == AUTO)
+  56   1                      ModeAuto();
+  57   1              else if (mode == MANUAL)
+  58   1                      ModeManual();
+  59   1              TR0 = 1;
+  60   1      }
+  61          
+  62          
+  63          void CaculateDutyCycle() //计算占左右电机空比
+  64          {       
+  65   1              if (special == 0)
+  66   1              {
+  67   2                      D = error - p_error;
+  68   2                      pid_out = kp*error + kd*D;
+  69   2                      //更新左右电机占空比 
+  70   2                      left_dutyc  = default_dutyc + pid_out;
+  71   2                      right_dutyc = default_dutyc - pid_out;
+  72   2              }
+  73   1              else if (special == 1)
+  74   1              {
+  75   2                      left_dutyc = 0;
+  76   2                      right_dutyc = default_dutyc+4;
+  77   2              }
+  78   1              else if (special == 2)
+  79   1              {
+  80   2                      left_dutyc = default_dutyc+4;
+  81   2                      right_dutyc = 0;
+  82   2              }
+  83   1              if (left_dutyc > max_zkb)
+  84   1                      max_zkb = left_dutyc;
+  85   1              if (right_dutyc > max_zkb)
+  86   1                      max_zkb = right_dutyc;
+  87   1              
+  88   1              if (left_dutyc > 75)
+  89   1                      left_dutyc = 75;
+  90   1              if (right_dutyc > 75)
+  91   1                      right_dutyc = 75;
+  92   1              ApplyDutyCycle();
+  93   1      }
+  94          
+  95          void DetectError() //检测偏差
+  96          {  
+  97   1              float detect_error = 0;
+  98   1              switch (P2 & 0x1f)//取后5位
+  99   1              {
+ 100   2                      //循迹功能
+ 101   2                      case B01111: detect_error = -4.5        ; break;//5
+ 102   2                      case B00111: detect_error = -4; break;//4.5
+ 103   2              case B10111: detect_error = -3  ; break;
+ 104   2                      case B10011: detect_error = -1.2; break;                        
+ 105   2                      case B11011: detect_error =  0  ; break;
+ 106   2                      case B11001: detect_error =  1.2; break;
+ 107   2                      case B11101: detect_error =  3  ; break;
+ 108   2                      case B11100: detect_error =  4; break;
+ 109   2                      case B11110: detect_error =  4.5        ; break;
+ 110   2                      default : detect_error = error; 
+ 111   2              }
+ 112   1              
+ 113   1              //特殊判断 
+ 114   1              if (special && (irm == 0)) special = 0;
+ 115   1              if (mostl==0 && mostr)          //左侧检测到黑线 左拐
+ 116   1              {
+C51 COMPILER V9.56.0.0   MAIN                                                              11/04/2018 15:51:32 PAGE 3   
+
+ 117   2                      special = 1;
+ 118   2                      if ((P2 & 0x1f)==B11011 || (P2 & 0x1f)==B10111 || (P2 & 0x1f)==B11101 || (P2 & 0x1f)==B10011 || (P2 & 0x
+             -1f)==B11001) 
+ 119   2                      {
+ 120   3                              Delay10ms();
+ 121   3                              if ((P2 & 0x1f)==B11011 || (P2 & 0x1f)==B10111 || (P2 & 0x1f)==B11101 || (P2 & 0x1f)==B10011 || (P2 & 0
+             -x1f)==B11001) 
+ 122   3                                      Angle45(0);
+ 123   3                      }
+ 124   2                      else if ((P2 & 0x1f)==B00011 || (P2 & 0x1f)==B00111 || (P2 & 0x1f)==B00001)     //直角左拐
+ 125   2                      {
+ 126   3                              Delay10ms();
+ 127   3                              if ((P2 & 0x1f)==B00011 || (P2 & 0x1f)==B00111 || (P2 & 0x1f)==B00001)
+ 128   3                                      Angle90(0);
+ 129   3              
+ 130   3                      }
+ 131   2              }
+ 132   1              else if (mostl && mostr==0)     //右侧检测到黑线 右拐
+ 133   1              {
+ 134   2                      special = 2;
+ 135   2                      if ((P2 & 0x1f)==B11011 || (P2 & 0x1f)==B10111 || (P2 & 0x1f)==B11101 || (P2 & 0x1f)==B10011 || (P2 & 0x
+             -1f)==B11001)
+ 136   2                      {       
+ 137   3                              Delay10ms();
+ 138   3                              if ((P2 & 0x1f)==B11011 || (P2 & 0x1f)==B10111 || (P2 & 0x1f)==B11101 || (P2 & 0x1f)==B10011 || (P2 & 0
+             -x1f)==B11001)
+ 139   3                                      Angle45(1);
+ 140   3                      }
+ 141   2                      else if ((P2 & 0x1f)==B11000 || (P2 & 0x1f)==B11100 || (P2 & 0x1f)==B10000)     //直角右拐
+ 142   2                      {
+ 143   3                              Delay10ms();
+ 144   3                              if ((P2 & 0x1f)==B11000 || (P2 & 0x1f)==B11100 || (P2 & 0x1f)==B10000)
+ 145   3                                      Angle90(1);
+ 146   3                      }
+ 147   2              }
+ 148   1              else if (mostl && mostr && ((P2 & 0x1f)==B10001 || (P2 & 0x1f)==B00000 || (P2 & 0x1f)==B10000 || (P2 & 0x
+             -1f)==B00001))        
+ 149   1              {       //死路或终点
+ 150   2                      Delay10ms();
+ 151   2                      if (mostl && mostr && ((P2 & 0x1f)==B10001 || (P2 & 0x1f)==B00000 || (P2 & 0x1f)==B10000 || (P2 & 0x1f)=
+             -=B00001))
+ 152   2                      {
+ 153   3                              Delay100ms();Delay10ms();Delay10ms();Delay10ms();Delay10ms();Delay10ms();
+ 154   3                              if (!irm || !irml || !irmr)//终点
+ 155   3                              {
+ 156   4                                      SetMoto(0,0,0,0);
+ 157   4                                      while (1);
+ 158   4                              }
+ 159   3                              else// ((P2 & 0x1f) == B00000)
+ 160   3                              {  
+ 161   4                                      if (angle == 2) angle = 3;
+ 162   4                                      SetMoto(0,0,0,0);
+ 163   4                                      left_dutyc = default_dutyc+3;
+ 164   4                                      right_dutyc = default_dutyc+3;
+ 165   4                                      ApplyDutyCycle();
+ 166   4                                      Delay100ms();
+ 167   4                                      SetMoto(1,0,0,1);
+ 168   4                                      Delay500ms();
+ 169   4                                      SetMoto(1,0,1,0);
+ 170   4                              }
+ 171   3                      }
+ 172   2              }
+C51 COMPILER V9.56.0.0   MAIN                                                              11/04/2018 15:51:32 PAGE 4   
+
+ 173   1              else if ((P2&0x1f) == B00000 && !mostl && !mostr)//全黑 t 十字
+ 174   1              {
+ 175   2                      Delay10ms();
+ 176   2                      if ((P2&0x1f) == B00000 && !mostl && !mostr)//t
+ 177   2                      {
+ 178   3                              Delay100ms();Delay100ms();Delay10ms();Delay10ms();Delay10ms();Delay10ms();Delay10ms();   
+ 179   3                              if ((P2&0x1f) == B11111)
+ 180   3                              {               
+ 181   4                                      special = 1+angle;
+ 182   4                                      Angle90(angle);
+ 183   4                                      Tcount++;
+ 184   4                              }
+ 185   3                      }
+ 186   2                      else//十字
+ 187   2                      {
+ 188   3                              if (angle == 3)
+ 189   3                              {
+ 190   4                                      Angle90(0);
+ 191   4                              }
+ 192   3                              angle = 2;
+ 193   3                      }
+ 194   2              }
+ 195   1              //更新error
+ 196   1              p_error = error;
+ 197   1              error = detect_error;
+ 198   1      }
+ 199          
+ 200          void ModeAuto()
+ 201          {
+ 202   1              
+ 203   1              if (get == MANUAL || get == STOP)
+ 204   1              {
+ 205   2                      mode = MANUAL;
+ 206   2                      SetMoto(0,0,0,0);
+ 207   2                      OLED_SetClear(0,50,6,7);
+ 208   2                      OLED_ShowString(0,6,"MAN");
+ 209   2                      PidInit();
+ 210   2                      return;
+ 211   2              }
+ 212   1              
+ 213   1              SetMoto(1,0,1,0);
+ 214   1              DetectError();
+ 215   1              CaculateDutyCycle();
+ 216   1      }
+ 217          
+ 218          void ApplyDutyCycle()   //应用占空比
+ 219          {
+ 220   1              u8 lll,rrr;
+ 221   1              lll = 255-left_dutyc*255/100.0;
+ 222   1              rrr = 255-right_dutyc*255/100.0;
+ 223   1              LeftSet(lll);
+ 224   1              RightSet(rrr);
+ 225   1      }
+ 226          
+ 227          void ModeManual()
+ 228          {
+ 229   1              left_dutyc = 70;
+ 230   1              right_dutyc = 70;
+ 231   1              ApplyDutyCycle();
+ 232   1              switch (get)
+ 233   1              {
+ 234   2                      case LEFT  : SetMoto(0,0,1,0); break;
+C51 COMPILER V9.56.0.0   MAIN                                                              11/04/2018 15:51:32 PAGE 5   
+
+ 235   2                      case RIGHT : SetMoto(1,0,0,0); break;
+ 236   2                      case GO    : SetMoto(1,0,1,0); break;
+ 237   2                      case BACK  : SetMoto(0,1,0,1); break;
+ 238   2                      case STOP  : SetMoto(0,0,0,0); break;
+ 239   2                      case AUTO  :
+ 240   2                              mode = AUTO; 
+ 241   2                              SetMoto(1,0,1,0);
+ 242   2                              PidInit();
+ 243   2                              OLED_SetClear(0,50,6,7);
+ 244   2                              OLED_ShowString(0,6,"AUTO");
+ 245   2                              return;
+ 246   2                      default : SetMoto(1,1,1,1);
+ 247   2              }
+ 248   1      }
+ 249          
+ 250          void Angle90(u8 dir90) //dir=0=left dir=1=right
+ 251          {
+ 252   1              angle = dir90;
+ 253   1              SetMoto(0,0,0,0);
+ 254   1              left_dutyc = default_dutyc+2;
+ 255   1              right_dutyc = default_dutyc+2;
+ 256   1              ApplyDutyCycle();
+ 257   1              if (dir90 == 0){ SetMoto(0,1,1,0); }
+ 258   1              else           { SetMoto(1,0,0,1); }
+ 259   1              Delay100ms();Delay100ms();Delay100ms();Delay100ms();
+ 260   1              SetMoto(1,0,1,0);
+ 261   1      }
+ 262          
+ 263          void Angle45(u8 dir45)
+ 264          {
+ 265   1              //倒车
+ 266   1              SetMoto(0,0,0,0);
+ 267   1              left_dutyc = default_dutyc;
+ 268   1              right_dutyc = default_dutyc;
+ 269   1              ApplyDutyCycle();
+ 270   1              SetMoto(0,1,0,1);
+ 271   1              Delay100ms();
+ 272   1              Delay10ms();
+ 273   1              //锐角转弯
+ 274   1              SetMoto(0,0,0,0);
+ 275   1              if (dir45 == 0)
+ 276   1              {
+ 277   2                      left_dutyc = 0;
+ 278   2                      right_dutyc = default_dutyc+3;
+ 279   2              }
+ 280   1              else
+ 281   1              {
+ 282   2                      left_dutyc = default_dutyc+3;
+ 283   2                      right_dutyc = 0;
+ 284   2              }       
+ 285   1              ApplyDutyCycle();
+ 286   1              SetMoto(1,0,1,0);
+ 287   1              Delay1s();
+ 288   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1832    ----
+   CONSTANT SIZE    =      9    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     56       8
+C51 COMPILER V9.56.0.0   MAIN                                                              11/04/2018 15:51:32 PAGE 6   
+
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
